@@ -1,11 +1,15 @@
 package com.backend.book_network.auth;
 
+import com.backend.book_network.email.EmailService;
+import com.backend.book_network.email.EmailTemplateName;
 import com.backend.book_network.model.role.RoleRepository;
 import com.backend.book_network.model.user.Token;
 import com.backend.book_network.model.user.TokenRepository;
 import com.backend.book_network.model.user.User;
 import com.backend.book_network.model.user.UserRepository;
+import jakarta.mail.MessagingException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -17,12 +21,15 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AuthenticationService {
 
+    @Value("${application.mailing.frontend.activation-url}")
+    private String activationUrl;
     private final PasswordEncoder passwordEncoder;
     private final UserRepository userRepository;
     private final TokenRepository tokenRepository;
-
     private final RoleRepository roleRepository;
-    public void register(RegistrationRequest request) {
+    private final EmailService emailService;
+
+    public void register(RegistrationRequest request) throws MessagingException {
         var userRole = roleRepository.findByName("USER")
                 .orElseThrow(()-> new IllegalStateException("Role User was not initialized"));
         var user = User.builder()
@@ -37,14 +44,23 @@ public class AuthenticationService {
         sendValidationEmail(user);
     }
 
-    private void sendValidationEmail(User user) {
+    private void sendValidationEmail(User user) throws MessagingException {
         var newToken = generateAndSaveActivationToken(user);
+
+        emailService.sendEmail(
+                user.getEmail(),
+                user.getFullName(),
+                EmailTemplateName.ACTIVATE_ACCOUNT,
+                activationUrl,
+                newToken,
+                "Account activation"
+        );
         //send email
     }
 
     private String generateAndSaveActivationToken(User user) {
         //generate a token
-        String generatedToken = generateActivationCode(6);
+        String generatedToken = generateActivationCode();
         var token = Token.builder()
                 .token(generatedToken)
                 .createdAt(LocalDateTime.now())
@@ -55,11 +71,11 @@ public class AuthenticationService {
         return generatedToken;
     }
 
-    private String generateActivationCode(int length) {
+    private String generateActivationCode() {
         String characters = "0123456789";
         StringBuilder codeBuilder = new StringBuilder();
         SecureRandom secureRandom = new SecureRandom();
-        for(int i=0;i<length;i++){
+        for(int i = 0; i< 6; i++){
             int randomIndex = secureRandom.nextInt(characters.length());
             codeBuilder.append(characters.charAt(randomIndex));
         }
